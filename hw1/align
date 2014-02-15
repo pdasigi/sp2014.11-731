@@ -9,6 +9,62 @@ optparser.add_option("-t", "--threshold", dest="threshold", default=0.5, type="f
 optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxint, type="int", help="Number of sentences to use for training and alignment")
 (opts, _) = optparser.parse_args()
 
+from ibm_models import *
+import codecs
+
+trainfile = codecs.open(opts.bitext, 'r', 'utf-8')
+maxm = 0
+maxl = 0
+train = []
+for line in trainfile:
+	parts = line.strip().split(" ||| ")
+	f = parts[0]
+	e = parts[1]
+	l = len(f.split(" "))
+	m = len(e.split(" "))
+	if m > maxm:
+		maxm = m
+	if l > maxl:
+		maxl = l
+	train.append((f, e))
+
+#print >>sys.stderr, "Loaded training data"
+numiter = 5
+initparam = heuristicinit(train)
+print >>sys.stderr, "Initiated random parameters for Model 1"
+model1param = model1(train, initparam, numiter)
+print >>sys.stderr, "Trained model 1"
+#model1file = open(modelfile, "wb")
+#pickle.dump(model1param, model1file)
+initqparam = qinit(maxl, maxm)
+print >>sys.stderr, "Initiated distortion parameters"
+#model1file = open(sys.argv[5], "rb")
+#model1param = pickle.load(model1file)
+#print >>sys.stderr, "Loaded model1 to memory"
+tparam, qparam = model2(train, model1param, initqparam, numiter)
+print >>sys.stderr, "Trained model 2"
+#initparam = heuristicinit(train)
+#model2param = model2(train, initparam, initqparam, numiter)
+#model2file = open(modelfile, "wb")
+#pickle.dump(model2param, model2file)
+#model1file = open(modelfile, "rb")
+#model1param = pickle.load(model1file)
+#print >>sys.stderr, "Loaded model1 to memory"
+#model2file = open(modelfile, "rb")
+#(tparam, qparam) = pickle.load(model2file)
+#print >>sys.stderr, "Loaded model2 to memory"
+#out = open(sys.argv[5], 'w')
+for (src, tgt) in train:
+	#if model == 'model1':
+	#alignments = model1align(src.strip(), tgt.strip(), model1param)
+	#else:
+	alignments = model2align(src.strip(), tgt.strip(), tparam, qparam)
+	algn = []
+	for i in alignments:
+		algn.append("%d-%d"%(i-1, alignments[i]-1))
+	print " ".join(algn)
+
+"""
 sys.stderr.write("Training with Dice's coefficient...")
 bitext = [[sentence.strip().split() for sentence in pair.split(' ||| ')] for pair in open(opts.bitext)][:opts.num_sents]
 f_count = defaultdict(int)
@@ -37,3 +93,4 @@ for (f, e) in bitext:
       if dice[(f_i,e_j)] >= opts.threshold:
         sys.stdout.write("%i-%i " % (i,j))
   sys.stdout.write("\n")
+"""

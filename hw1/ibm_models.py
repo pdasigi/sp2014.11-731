@@ -57,6 +57,8 @@ def model2(train, inittparam, initqparam, numiter):
 						tword = 'NULL'
 					else:
 						tword = tgtwords[j-1]
+					if (j, i, l, m) not in qparam:
+						qparam[(j, i, l, m)] = 1.0/(l+1)
 					paramsum += ftparam[tword]*qparam[(j, i, l, m)]
 				for j in range(0, len(tgtwords)+1):
 					if j == 0:
@@ -180,7 +182,7 @@ def qinit(maxl, maxm):
 	for m in range(maxm):
 		for l in range(maxl):
 			for i in range(1, m+1):
-				for j in range(1, l+1):
+				for j in range(0, l+1):
 					qparam[(j, i, l, m)] = 1.0 / (l+1)
 	return qparam
 

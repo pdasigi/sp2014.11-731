@@ -15,3 +15,7 @@ The `data/` directory contains a fragment of the German/English Europarl corpus.
 
  - `data/dev.align` contains 150 manual alignments corresponding to the first 150 sentences of the parallel corpus. When you run `./check` these are used to compute the alignment error rate. You may use these in any way you choose. The notation `i-j` means the word at position *i* (0-indexed) in the German sentence is aligned to the word at position *j* in the English sentence; the notation `i?j` means they are "probably" aligned.
 
+
+Current Model:
+
+Train translation parameters for five iterations on Model 1 and use them to initialize translation parameters of model 2, which is run for five iterations.

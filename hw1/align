@@ -10,9 +10,11 @@ optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxi
 (opts, _) = optparser.parse_args()
 
 from ibm_models import *
+from symmetrize import *
 import codecs
 
 trainfile = codecs.open(opts.bitext, 'r', 'utf-8')
+
 maxm = 0
 maxl = 0
 train = []
@@ -20,49 +22,85 @@ for line in trainfile:
 	parts = line.strip().split(" ||| ")
 	f = parts[0]
 	e = parts[1]
-	l = len(f.split(" "))
-	m = len(e.split(" "))
+	m = len(f.split(" "))
+	l = len(e.split(" "))
 	if m > maxm:
 		maxm = m
 	if l > maxl:
 		maxl = l
 	train.append((f, e))
 
+revtrain = [(e, f) for (f, e) in train]
 #print >>sys.stderr, "Loaded training data"
 numiter = 5
 initparam = heuristicinit(train)
+revinitparam = heuristicinit(revtrain)
 print >>sys.stderr, "Initiated random parameters for Model 1"
 model1param = model1(train, initparam, numiter)
+revmodel1param = model1(revtrain,revinitparam,numiter)
 print >>sys.stderr, "Trained model 1"
-#model1file = open(modelfile, "wb")
-#pickle.dump(model1param, model1file)
+
+model1file = open("model1.pkl", "wb")
+pickle.dump(model1param, model1file)
+model1file.close()
+revmodel1file = open("revmodel1.pkl", "wb")
+pickle.dump(revmodel1param, revmodel1file)
+revmodel1file.close()
+print >>sys.stderr, "Pickled Model1 param"
+
 initqparam = qinit(maxl, maxm)
 print >>sys.stderr, "Initiated distortion parameters"
 #model1file = open(sys.argv[5], "rb")
 #model1param = pickle.load(model1file)
 #print >>sys.stderr, "Loaded model1 to memory"
 tparam, qparam = model2(train, model1param, initqparam, numiter)
+revtparam, revqparam = model2(revtrain, revmodel1param, initqparam, numiter)
 print >>sys.stderr, "Trained model 2"
+
 #initparam = heuristicinit(train)
 #model2param = model2(train, initparam, initqparam, numiter)
-#model2file = open(modelfile, "wb")
-#pickle.dump(model2param, model2file)
-#model1file = open(modelfile, "rb")
-#model1param = pickle.load(model1file)
-#print >>sys.stderr, "Loaded model1 to memory"
-#model2file = open(modelfile, "rb")
-#(tparam, qparam) = pickle.load(model2file)
-#print >>sys.stderr, "Loaded model2 to memory"
-#out = open(sys.argv[5], 'w')
+model2file = open("model2.pkl", "wb")
+#model2file = open("model2.pkl", "rb")
+#tparam, qparam = pickle.load(model2file)
+pickle.dump((tparam, qparam), model2file)
+model2file.close()
+revmodel2file = open("revmodel2.pkl", "wb")
+#revmodel2file = open("revmodel2.pkl", "rb")
+#revtparam, revqparam = pickle.load(revmodel2file)
+pickle.dump((revtparam, revqparam), model2file)
+revmodel2file.close()
+#print >>sys.stderr, "Loaded Model 2 param"
+
+#fout = open("forwardalign.txt", "w")
+#rout = open("reversealign.txt", "w")
+#uout = open("unionalign.txt", "w")
+#iout = open("intersectalign.txt", "w")
+#gdout = open("growdiagalign.txt", "w")
+#gdfout = open("growdiagfinalalign.txt", "w")
+outfh = open("output.txt", "w")
 for (src, tgt) in train:
 	#if model == 'model1':
 	#alignments = model1align(src.strip(), tgt.strip(), model1param)
 	#else:
 	alignments = model2align(src.strip(), tgt.strip(), tparam, qparam)
+	revalignments = model2align(tgt.strip(), src.strip(), revtparam, revqparam)
 	algn = []
+	revalgn = []
 	for i in alignments:
-		algn.append("%d-%d"%(i-1, alignments[i]-1))
-	print " ".join(algn)
+		algn.append((i-1, alignments[i]-1))
+	for i in revalignments:
+		revalgn.append((revalignments[i]-1, i-1))
+
+	#ualgn = union(set(algn), set(revalgn))
+	#ialgn = intersect(set(algn), set(revalgn))
+	gdalgn = growDiag(set(algn), set(revalgn))
+	#gdfalgn = growDiagFinal(set(algn), set(revalgn))
+	#print >>fout, " ".join(["%d-%d"%(i, j) for (i, j) in algn])
+	#print >>rout, " ".join(["%d-%d"%(i, j) for (i, j) in revalgn])
+	#print >>uout, " ".join(["%d-%d"%(i, j) for (i, j) in ualgn])
+	#print >>iout, " ".join(["%d-%d"%(i, j) for (i, j) in ialgn])
+	print >>outfh, " ".join(["%d-%d"%(i, j) for (i, j) in gdalgn])
+	#print >>gdfout, " ".join(["%d-%d"%(i, j) for (i, j) in gdfalgn])
 
 """
 sys.stderr.write("Training with Dice's coefficient...")

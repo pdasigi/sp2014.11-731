@@ -12,6 +12,10 @@ optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxi
 from ibm_models import *
 from symmetrize import *
 import codecs
+import nltk.corpus
+from nltk.stem.snowball import GermanStemmer
+es = nltk.corpus.wordnet.morphy
+gs = GermanStemmer()
 
 trainfile = codecs.open(opts.bitext, 'r', 'utf-8')
 
@@ -20,33 +24,47 @@ maxl = 0
 train = []
 for line in trainfile:
 	parts = line.strip().split(" ||| ")
-	f = parts[0]
-	e = parts[1]
-	m = len(f.split(" "))
-	l = len(e.split(" "))
+	#f = parts[0]
+	#e = parts[1]
+	#m = len(f.split(" "))
+	#l = len(e.split(" "))
+	f = [gs.stem(x) for x in parts[0].split(" ")]
+	#print f
+	e = [es(x.lower()) if es(x.lower()) is not None else x.lower() for x in parts[1].split(" ")]
+	#print e
+	m = len(f)
+	l = len(e)
 	if m > maxm:
 		maxm = m
 	if l > maxl:
 		maxl = l
-	train.append((f, e))
+	#train.append((f, e))
+	train.append((" ".join(f), " ".join(e)))
 
 revtrain = [(e, f) for (f, e) in train]
+print >>sys.stderr, train[:6]
+print >>sys.stderr, revtrain[:6]
 #print >>sys.stderr, "Loaded training data"
 numiter = 5
+
 initparam = heuristicinit(train)
 revinitparam = heuristicinit(revtrain)
 print >>sys.stderr, "Initiated random parameters for Model 1"
 model1param = model1(train, initparam, numiter)
+
 revmodel1param = model1(revtrain,revinitparam,numiter)
 print >>sys.stderr, "Trained model 1"
 
-model1file = open("model1.pkl", "wb")
-pickle.dump(model1param, model1file)
-model1file.close()
-revmodel1file = open("revmodel1.pkl", "wb")
-pickle.dump(revmodel1param, revmodel1file)
+#model1file = open("model1-stem.pkl", "rb")
+#model1param = pickle.load(model1file)
+#model1file.close()
+
+"""
+revmodel1file = open("revmodel1-stem.pkl", "rb")
+revmodel1param = pickle.load(revmodel1file)
 revmodel1file.close()
-print >>sys.stderr, "Pickled Model1 param"
+"""
+#print >>sys.stderr, "Pickled Model1 param"
 
 initqparam = qinit(maxl, maxm)
 print >>sys.stderr, "Initiated distortion parameters"
@@ -54,36 +72,38 @@ print >>sys.stderr, "Initiated distortion parameters"
 #model1param = pickle.load(model1file)
 #print >>sys.stderr, "Loaded model1 to memory"
 tparam, qparam = model2(train, model1param, initqparam, numiter)
+
 revtparam, revqparam = model2(revtrain, revmodel1param, initqparam, numiter)
 print >>sys.stderr, "Trained model 2"
 
 #initparam = heuristicinit(train)
 #model2param = model2(train, initparam, initqparam, numiter)
-model2file = open("model2.pkl", "wb")
-#model2file = open("model2.pkl", "rb")
-#tparam, qparam = pickle.load(model2file)
-pickle.dump((tparam, qparam), model2file)
-model2file.close()
-revmodel2file = open("revmodel2.pkl", "wb")
+#model2file = open("model2-stem.pkl", "wb")
+#model2file = open("model2.pkl", "wb")
+#pickle.dump((tparam, qparam), model2file)
+#model2file.close()
+
+#revmodel2file = open("revmodel2-stem.pkl", "wb")
 #revmodel2file = open("revmodel2.pkl", "rb")
 #revtparam, revqparam = pickle.load(revmodel2file)
-pickle.dump((revtparam, revqparam), model2file)
-revmodel2file.close()
+#pickle.dump((revtparam, revqparam), revmodel2file)
+#revmodel2file.close()
 #print >>sys.stderr, "Loaded Model 2 param"
 
-#fout = open("forwardalign.txt", "w")
-#rout = open("reversealign.txt", "w")
-#uout = open("unionalign.txt", "w")
-#iout = open("intersectalign.txt", "w")
-#gdout = open("growdiagalign.txt", "w")
-#gdfout = open("growdiagfinalalign.txt", "w")
+#fout = open("forwardalign-stem.txt", "w")
+#rout = open("reversealign-stem.txt", "w")
+#uout = open("unionalign-stem.txt", "w")
+#iout = open("intersectalign-stem.txt", "w")
+#gdout = open("growdiagalign-stem.txt", "w")
+#gdfout = open("growdiagfinalalign-stem.txt", "w")
+#gdfaout = open("growdiagfinalandalign-stem.txt", "w")
 outfh = open("output.txt", "w")
 for (src, tgt) in train:
 	#if model == 'model1':
 	#alignments = model1align(src.strip(), tgt.strip(), model1param)
 	#else:
-	alignments = model2align(src.strip(), tgt.strip(), tparam, qparam)
-	revalignments = model2align(tgt.strip(), src.strip(), revtparam, revqparam)
+	alignments = model2align(src, tgt, tparam, qparam)
+	revalignments = model2align(tgt, src, revtparam, revqparam)
 	algn = []
 	revalgn = []
 	for i in alignments:
@@ -95,6 +115,7 @@ for (src, tgt) in train:
 	#ialgn = intersect(set(algn), set(revalgn))
 	gdalgn = growDiag(set(algn), set(revalgn))
 	#gdfalgn = growDiagFinal(set(algn), set(revalgn))
+	#gdfaalign = growDiagFInalAnd(set(algn), set(revalgn))
 	#print >>fout, " ".join(["%d-%d"%(i, j) for (i, j) in algn])
 	#print >>rout, " ".join(["%d-%d"%(i, j) for (i, j) in revalgn])
 	#print >>uout, " ".join(["%d-%d"%(i, j) for (i, j) in ualgn])

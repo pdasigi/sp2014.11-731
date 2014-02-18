@@ -18,5 +18,6 @@ The `data/` directory contains a fragment of the German/English Europarl corpus.
 
 Current Model:
 
+0) Use English and German stemmers to preprocess and normalize data.
 1) Train translation parameters for five iterations on Model 1 and use them to initialize translation parameters of model 2, which is run for five iterations.
 2) Train two models f2e and e2f on model2, symmetrize bidirectional alignment using GrowDiag heuristic

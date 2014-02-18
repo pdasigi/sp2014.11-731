@@ -11,12 +11,23 @@ optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxi
 
 from ibm_models import *
 from symmetrize import *
-import codecs
+import codecs, re
 #import nltk.corpus
 from nltk.stem.snowball import GermanStemmer, EnglishStemmer
 #es = nltk.corpus.wordnet.morphy
 es = EnglishStemmer()
 gs = GermanStemmer()
+
+def normEng(e):
+	if re.sub("[0-9]+(.[0-9]+)?", "NUM", e) == 'NUM':
+		return 'NUM'
+	else:
+		return es.stem(e)
+def normGer(f):
+	if re.sub("[0-9]+.?([0-9]+)?", "NUM", f) == 'NUM':
+		return 'NUM'
+	else:
+		return gs.stem(f)
 
 trainfile = codecs.open(opts.bitext, 'r', 'utf-8')
 
@@ -29,9 +40,9 @@ for line in trainfile:
 	#e = parts[1]
 	#m = len(f.split(" "))
 	#l = len(e.split(" "))
-	f = [gs.stem(x) for x in parts[0].split(" ")]
+	f = [normGer(x) for x in parts[0].split(" ")]
 	#print f
-	e = [es.stem(x) for x in parts[1].split(" ")]
+	e = [normEng(x) for x in parts[1].split(" ")]
 	#print e
 	m = len(f)
 	l = len(e)

@@ -12,9 +12,10 @@ optparser.add_option("-n", "--num_sentences", dest="num_sents", default=sys.maxi
 from ibm_models import *
 from symmetrize import *
 import codecs
-import nltk.corpus
-from nltk.stem.snowball import GermanStemmer
-es = nltk.corpus.wordnet.morphy
+#import nltk.corpus
+from nltk.stem.snowball import GermanStemmer, EnglishStemmer
+#es = nltk.corpus.wordnet.morphy
+es = EnglishStemmer()
 gs = GermanStemmer()
 
 trainfile = codecs.open(opts.bitext, 'r', 'utf-8')
@@ -30,7 +31,7 @@ for line in trainfile:
 	#l = len(e.split(" "))
 	f = [gs.stem(x) for x in parts[0].split(" ")]
 	#print f
-	e = [es(x.lower()) if es(x.lower()) is not None else x.lower() for x in parts[1].split(" ")]
+	e = [es.stem(x) for x in parts[1].split(" ")]
 	#print e
 	m = len(f)
 	l = len(e)
@@ -90,14 +91,14 @@ print >>sys.stderr, "Trained model 2"
 #revmodel2file.close()
 #print >>sys.stderr, "Loaded Model 2 param"
 
-#fout = open("forwardalign-stem.txt", "w")
-#rout = open("reversealign-stem.txt", "w")
-#uout = open("unionalign-stem.txt", "w")
-#iout = open("intersectalign-stem.txt", "w")
-#gdout = open("growdiagalign-stem.txt", "w")
-#gdfout = open("growdiagfinalalign-stem.txt", "w")
-#gdfaout = open("growdiagfinalandalign-stem.txt", "w")
-outfh = open("output.txt", "w")
+fout = open("forwardalign-snb.txt", "w")
+rout = open("reversealign-snb.txt", "w")
+uout = open("unionalign-snb.txt", "w")
+iout = open("intersectalign-snb.txt", "w")
+gdout = open("growdiagalign-snb.txt", "w")
+gdfout = open("growdiagfinalalign-snb.txt", "w")
+gdfaout = open("growdiagfinalandalign-snb.txt", "w")
+#outfh = open("output.txt", "w")
 for (src, tgt) in train:
 	#if model == 'model1':
 	#alignments = model1align(src.strip(), tgt.strip(), model1param)
@@ -111,17 +112,18 @@ for (src, tgt) in train:
 	for i in revalignments:
 		revalgn.append((revalignments[i]-1, i-1))
 
-	#ualgn = union(set(algn), set(revalgn))
-	#ialgn = intersect(set(algn), set(revalgn))
+	ualgn = union(set(algn), set(revalgn))
+	ialgn = intersect(set(algn), set(revalgn))
 	gdalgn = growDiag(set(algn), set(revalgn))
-	#gdfalgn = growDiagFinal(set(algn), set(revalgn))
-	#gdfaalign = growDiagFInalAnd(set(algn), set(revalgn))
-	#print >>fout, " ".join(["%d-%d"%(i, j) for (i, j) in algn])
-	#print >>rout, " ".join(["%d-%d"%(i, j) for (i, j) in revalgn])
-	#print >>uout, " ".join(["%d-%d"%(i, j) for (i, j) in ualgn])
-	#print >>iout, " ".join(["%d-%d"%(i, j) for (i, j) in ialgn])
-	print >>outfh, " ".join(["%d-%d"%(i, j) for (i, j) in gdalgn])
-	#print >>gdfout, " ".join(["%d-%d"%(i, j) for (i, j) in gdfalgn])
+	gdfalgn = growDiagFinal(set(algn), set(revalgn))
+	gdfaalgn = growDiagFinalAnd(set(algn), set(revalgn))
+	print >>fout, " ".join(["%d-%d"%(i, j) for (i, j) in algn])
+	print >>rout, " ".join(["%d-%d"%(i, j) for (i, j) in revalgn])
+	print >>uout, " ".join(["%d-%d"%(i, j) for (i, j) in ualgn])
+	print >>iout, " ".join(["%d-%d"%(i, j) for (i, j) in ialgn])
+	print >>gdout, " ".join(["%d-%d"%(i, j) for (i, j) in gdalgn])
+	print >>gdfout, " ".join(["%d-%d"%(i, j) for (i, j) in gdfalgn])
+	print >>gdfaout, " ".join(["%d-%d"%(i, j) for (i, j) in gdfaalgn])
 
 """
 sys.stderr.write("Training with Dice's coefficient...")

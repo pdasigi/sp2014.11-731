@@ -3,25 +3,62 @@
 import argparse
 import json
 import os, sys, math
+from util import compare_clusters
 
-def extract_features(hyp, ref):
-  hwords = hyp.lower().split()
-  rwords = ref.lower().split()
+def get_precision_recall(hwords, rwords):
+  hypset = set(hwords)
   refset = set(rwords)
   precision = sum(1.0 for word in hwords if word in refset) / len(hwords)
-  return {'prec':precision}
+  recall = sum(1.0 for word in rwords if word in hypset) / len(rwords)
+  return precision, recall 
+
+def extract_features(hyp, ref, hypc, refc, aligns):
+  hwords = hyp.lower().split()
+  rwords = ref.lower().split()
+  htrwords = [x[:4] for x in hwords]
+  rtrwords = [x[:4] for x in rwords]
+  hclust = [x[:3] for x in hypc.split()]
+  rclust = [x[:3] for x in refc.split()]
+  #hclust = hypc.split()
+  #rclust = refc.split()
+  hbigrams = [(hwords[i-1], hwords[i]) for i in range(1, len(hwords))]
+  rbigrams = [(rwords[i-1], rwords[i]) for i in range(1, len(rwords))]
+  htrbigrams = [(htrwords[i-1], htrwords[i]) for i in range(1, len(htrwords))]
+  rtrbigrams = [(rtrwords[i-1], rtrwords[i]) for i in range(1, len(rtrwords))]
+  prec, rec = get_precision_recall(hwords, rwords)
+  trprec, trrec = get_precision_recall(htrwords, rtrwords)
+  cprec, crec = get_precision_recall(hclust, rclust)
+  if len(hbigrams) != 0 and len(rbigrams) != 0:
+    bigramprec, bigramrec = get_precision_recall(hbigrams, rbigrams)
+  else:
+    bigramprec, bigramrec = prec, rec
+  if len(htrbigrams) != 0 and len(rtrbigrams) != 0:
+    trbigramprec, trbigramrec = get_precision_recall(htrbigrams, rtrbigrams)
+  else:
+    trbigramprec, trbigramrec = trprec, trrec
+  alratio = float(len(aligns))/len(hwords)
+  return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec}
+  #return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec, "trbiprec":trbigramprec, "trbirec":trbigramrec}
+  #return {'prec':precision, 'rec':recall, "trrec":trrec, "trpres":trprec, "cluster_cosine": compare_clusters(hclust, rclust)}
+  #return {'prec':precision, 'rec':recall, "trpres":trprec, "trrec":trrec, "cprec":cprec, "crec":crec, "word_cosine":compare_clusters(hwords, rwords)}
+  #return {'prec':precision, 'rec':recall, "trrec":trrec, "trpres":trprec, "word_cosine": compare_clusters(htrwords, rtrwords), "cluster_cosine": compare_clusters(hclust, rclust), "aligned_ratio":alratio}
+  #return {'prec':precision, 'rec':recall, "trpres":trprec, "trrec":trrec, "cprec":cprec, "crec":crec, "cosine": compare_clusters(hclust, rclust)}
 
 argparser = argparse.ArgumentParser(prog='extract')
 argparser.add_argument('-x', '--pairs', dest='pairs', default='data/en-cs.pairs', help='Reference-Hypothesis pairs')
+argparser.add_argument('-a', '--aligns', dest='aligns', default='forwardalign-snb.txt', help='Reference-Hypothesis alignments')
+argparser.add_argument('-c', '--clustered', dest='clustered', default='data/en-cs.pairs.all_clusters', help='Clustered Reference-Hypothesis pairs')
 
 args = argparser.parse_args()
 
 lc = 0
 sys.stderr.write('Extracting features for (ref,hyp) pairs from %s.\n' % args.pairs)
 # loop over all (ref,hyp) pairs in the input file and extract evaluation features
-for ref_hyp in open(args.pairs):
+for ref_hyp, align, clust in zip(open(args.pairs), open(args.aligns), open(args.clustered)):
   lc += 1
   ref, hyp = ref_hyp.rstrip().split(' ||| ')
-  fmap = extract_features(hyp, ref)
-  print json.dumps(fmap)   # print evaluation feature map
+  refc, hypc = clust.rstrip().split(' ||| ')
+  #algncnt = len(align.strip().split())
+  fmap = extract_features(hyp, ref, hypc, refc, [(int(x.split('-')[0]), int(x.split('-')[1])) for x in align.strip().split()])
+  print json.dumps({key: round(fmap[key], 5) for key in fmap})   # print evaluation feature map
 

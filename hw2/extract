@@ -68,7 +68,7 @@ def extract_features(hyp, ref, hypc, refc, aligns):
   alratio = float(len(aligns))/len(hwords)
   bleu = get_bleu(hwords, rwords)
   tr_bleu = get_bleu(htrwords, rtrwords)
-  return {"recall":rec, "trrec":trrec, "bleu":bleu, "tr_bleu":tr_bleu}
+  return {"recall":rec, "trrec":trrec, "bigramrec":bigramrec, "bleu":bleu, "tr_bleu":tr_bleu}
   #return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec, "tr_bigramprec":tr_bigramprec, "tr_bigramrec":tr_bigramrec, "cl_bigramprec":cl_bigramprec, "cl_bigramrec":cl_bigramrec}
   #return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec, "trbiprec":trbigramprec, "trbirec":trbigramrec}
   #return {'prec':precision, 'rec':recall, "trrec":trrec, "trpres":trprec, "cluster_cosine": compare_clusters(hclust, rclust)}

@@ -52,8 +52,8 @@ def extract_features(hyp, ref, hypc, refc, aligns):
   hwords = hyp.split()
   rwords = ref.split()
   #print >>sys.stderr, hwords_tok, rwords_tok, hwords, rwords
-  htrwords = [x[:4] for x in hwords]
-  rtrwords = [x[:4] for x in rwords]
+  htrwords = [x[:6] for x in hwords]
+  rtrwords = [x[:6] for x in rwords]
   hclust = [x[:4] for x in hypc.split()]
   rclust = [x[:4] for x in refc.split()]
   #hclust = hypc.split()
@@ -67,7 +67,8 @@ def extract_features(hyp, ref, hypc, refc, aligns):
   cl_bigramprec, cl_bigramrec = ngram_prec_rec(hclust, rclust, 2)
   alratio = float(len(aligns))/len(hwords)
   bleu = get_bleu(hwords, rwords)
-  return {"recall":rec, "trrec":trrec, "bleu":bleu}
+  tr_bleu = get_bleu(htrwords, rtrwords)
+  return {"recall":rec, "trrec":trrec, "bleu":bleu, "tr_bleu":tr_bleu}
   #return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec, "tr_bigramprec":tr_bigramprec, "tr_bigramrec":tr_bigramrec, "cl_bigramprec":cl_bigramprec, "cl_bigramrec":cl_bigramrec}
   #return {'prec':prec, 'rec':rec, "trrec":trrec, "trprec":trprec, "biprec":bigramprec, "birec":bigramrec, "trbiprec":trbigramprec, "trbirec":trbigramrec}
   #return {'prec':precision, 'rec':recall, "trrec":trrec, "trpres":trprec, "cluster_cosine": compare_clusters(hclust, rclust)}

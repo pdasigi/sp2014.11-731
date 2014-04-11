@@ -5,59 +5,251 @@ import models
 import heapq
 from collections import namedtuple
 
+from decode_old import monotone_decode
 parser = argparse.ArgumentParser(description='Simple phrase based decoder.')
 parser.add_argument('-i', '--input', dest='input', default='data/input', help='File containing sentences to translate (default=data/input)')
 parser.add_argument('-t', '--translation-model', dest='tm', default='data/tm', help='File containing translation model (default=data/tm)')
 parser.add_argument('-s', '--stack-size', dest='s', default=1, type=int, help='Maximum stack size (default=1)')
+parser.add_argument('-r', '--reorder-limit', dest='r', default=5, type=int, help='Reordering Limit (default=5)')
 parser.add_argument('-n', '--num_sentences', dest='num_sents', default=sys.maxint, type=int, help='Number of sentences to decode (default=no limit)')
 parser.add_argument('-l', '--language-model', dest='lm', default='data/lm', help='File containing ARPA-format language model (default=data/lm)')
 parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False,  help='Verbose mode (default=off)')
 opts = parser.parse_args()
+
+def add_transrange(transranges, new_range):
+	new_ranges = []
+	if transranges[-1][1] < new_range[0]:
+		new_ranges = transranges + [new_range]
+	else:
+		for ind in range(len(transranges)):
+			if new_range[1] < transranges[ind][0]:
+				new_ranges.extend([new_range] + transranges[ind:])
+				break
+			elif new_range[1] == transranges[ind][0]:
+				new_ranges.append((new_range[0], transranges[ind][1]))
+				new_ranges.extend(transranges[ind+1:])
+				break
+			elif new_range == transranges[ind]:
+				new_ranges = transranges[:]
+				break
+			elif new_range[0] == transranges[ind][1]:
+				if ind != len(transranges) - 1:
+					if new_range[1] == transranges[ind+1][0]:
+						new_ranges.append((transranges[ind][0], transranges[ind+1][1]))
+						new_ranges.extend(transranges[ind+2:])
+					else:
+						new_ranges.append((transranges[ind][0], new_range[1]))
+						new_ranges.extend(transranges[ind+1:])
+					break
+				else:
+					new_ranges.append((transranges[ind][0], new_range[1]))
+			else:
+				new_ranges.append(transranges[ind])
+	return new_ranges
+
+def estimate_future_scores(f, n):
+	f = ('<s>',) + f
+	scores = [[0.0]*(len(f)-i) for i in range(len(f))]
+	for j in range(len(f)):
+		for i in range(len(f)):
+			if i + j >= len(f):
+				break
+			curr_scores = []
+			if j < n:
+				# TM score + LM score of the phrase f[i:i+j+1], non existent if j >= n
+				if f[i] == '<s>':
+					curr_scores.append(max([phrase.logprob + lm.score(('<s>',), tuple(phrase.english.split()))[1] for phrase in tm[f[i+1:i+j+1]]]) if f[i+1:i+j+1] in tm else -100.0)
+				else:
+					curr_scores.append(max([phrase.logprob + lm.score((), tuple(phrase.english.split()))[1] for phrase in tm[f[i:i+j+1]]]) if f[i:i+j+1] in tm else -100.0)
+					
+			mj = j - 1
+			ni = i + j
+			nj = 0
+			while mj >= max(0, j-n):
+				curr_scores.append(scores[i][mj] + scores[ni][nj])
+				mj -= 1
+				ni -= 1
+				nj += 1
+			scores[i][j] = max(curr_scores)
+			#print i, j, f[i:i+j+1], scores[i][j], curr_scores
+	return scores
+
+def get_future_costs(cranges, lf, all_fs):
+	fc = 0.0
+	end = 0
+	for i, j in cranges+[(lf-1, lf-1)]:
+		fc += all_fs[end][i-end-1] if i > end else 0.0
+		end = j
+	return fc
+
+def get_feasible_ranges(tranrngs, hypr, lenf, reorderl, N):
+	ranges = []
+	end = 0
+	for tr in tranrngs + [(lenf, lenf)]:
+		# Deal with reordering within the loop.  If the range is too far away from the predecessor's range, break.
+		for i in range(end, tr[0]):
+			if i > hypr[1] + reorderl:
+				break
+			for j in range(i+1, min(tr[0]+1, i+N+1)):
+				if j < hypr[0] - reorderl:
+					break
+				ranges.append((i, j))
+		end = tr[1]
+	return ranges
+
+def untranslated_reachable(trngs, rng, lenf, reorderl, N):
+	res_trngs = add_transrange(trngs, rng)
+	return len(get_feasible_ranges(res_trngs, rng, lenf, reorderl, N)) != 0 or res_trngs[0] == (0, lenf)
+	
 
 tm = models.TM(opts.tm, sys.maxint)
 lm = models.LM(opts.lm)
 sys.stderr.write('Decoding %s...\n' % (opts.input,))
 input_sents = [tuple(line.strip().split()) for line in open(opts.input).readlines()[:opts.num_sents]]
 
-hypothesis = namedtuple('hypothesis', 'logprob, lm_state, predecessor, phrase')
+hypothesis = namedtuple('hypothesis', 'logprob, lm_state, hyprange, transranges, predecessor, phrase, fcost')
+untranslated = namedtuple('untranslated', 'english, logprob')
+N=3
 for f in input_sents:
-    # The following code implements a DP monotone decoding
-    # algorithm (one that doesn't permute the target phrases).
-    # Hence all hypotheses in stacks[i] represent translations of 
-    # the first i words of the input sentence.
-    # HINT: Generalize this so that stacks[i] contains translations
-    # of any i words (remember to keep track of which words those
-    # are, and to estimate future costs)
-    initial_hypothesis = hypothesis(0.0, lm.begin(), None, None)
+	# The following code implements a DP monotone decoding
+	# algorithm (one that doesn't permute the target phrases).
+	# Hence all hypotheses in stacks[i] represent translations of 
+	# the first i words of the input sentence.
+	# HINT: Generalize this so that stacks[i] contains translations
+	# of any i words (remember to keep track of which words those
+	# are, and to estimate future costs)
+	future_scores = estimate_future_scores(f, 3)
+	#print future_scores
+	initial_hypothesis = hypothesis(0.0, lm.begin(), (0, 0), [(0, 0)], None, None, 0.0)
 
-    stacks = [{} for _ in f] + [{}]
-    stacks[0][lm.begin()] = initial_hypothesis
-    for i, stack in enumerate(stacks[:-1]):
-        # extend the top s hypotheses in the current stack
-        for h in heapq.nlargest(opts.s, stack.itervalues(), key=lambda h: h.logprob): # prune
-            for j in xrange(i+1,len(f)+1):
-                if f[i:j] in tm:
-                    for phrase in tm[f[i:j]]:
-                        logprob = h.logprob + phrase.logprob
-                        lm_state = h.lm_state
-                        for word in phrase.english.split():
-                            (lm_state, word_logprob) = lm.score(lm_state, word)
-                            logprob += word_logprob
-                        logprob += lm.end(lm_state) if j == len(f) else 0.0
-                        new_hypothesis = hypothesis(logprob, lm_state, h, phrase)
-                        if lm_state not in stacks[j] or stacks[j][lm_state].logprob < logprob: # second case is recombination
-                            stacks[j][lm_state] = new_hypothesis 
+	stacks = [{} for _ in f] + [{}]
+	stacks[0][lm.begin()] = initial_hypothesis
+	#for stack in stacks[:-1]:
+	for translen, stack in enumerate(stacks[:-1]):
+		# extend the top s hypotheses in the current stack
+		for h in heapq.nlargest(opts.s, stack.itervalues(), key=lambda h: h.logprob+h.fcost): # prune
+			#ranges = []
+			#end = 0
+			#for tr in h.transranges + [(len(f), len(f))]:
+				# Deal with reordering within the loop.  If the range is too far away from the predecessor's range, break.
+			#	for i in range(end, tr[0]):
+			#		if i > h.hyprange[1] + opts.r:
+			#			break
+			#		for j in range(i+1, min(tr[0]+1, i+N+1)):
+			#			if j < h.hyprange[0] - opts.r:
+			#				break
+			#			ranges.append((i, j))
+			#	end = tr[1]
+			pot_ranges = get_feasible_ranges(h.transranges, h.hyprange, len(f), opts.r, N)
+			ranges = []
+			for rng in pot_ranges:
+				if untranslated_reachable(h.transranges, rng, len(f), opts.r, N):
+					ranges.append(rng)
+			#print "Looking at hypothesis", h.phrase, "in stack", translen, "through ranges", ranges, "pot ranges", pot_ranges, "translated range is", h.transranges, "hyp range is", h.hyprange
+			for i, j in ranges:
+				#print "Looking to translate", f[i:j]
+				if f[i:j] in tm:
+					phrases = tm[f[i:j]]
+					#print f[i:j], phrases
+					#print translen, i, j
+				else:
+					continue
+					#phrases = [untranslated(" ".join(f[i:j]), -10000.00)]
+				for phrase in phrases:
+					logprob = h.logprob + phrase.logprob
+					lm_state = h.lm_state
+					for word in phrase.english.split():
+						(lm_state, word_logprob) = lm.score(lm_state, word)
+						logprob += word_logprob
+					logprob += lm.end(lm_state) if j == len(f) else 0.0
+				 	fc = get_future_costs(add_transrange(h.transranges, (i,j)), len(f), future_scores)
+					#logprob += fc
+					new_transranges = add_transrange(h.transranges, (i, j))
+					new_hypothesis = hypothesis(logprob, lm_state, (i, j), new_transranges, h, phrase, fc)
+					new_translen = translen + j-i
+					#print "ntl", new_translen, "tl", translen, "i", i, "j", j
+					if lm_state not in stacks[new_translen] or stacks[new_translen][lm_state].logprob < logprob: # second case is recombination
+						stacks[new_translen][lm_state] = new_hypothesis
 
-    # find best translation by looking at the best scoring hypothesis
-    # on the last stack
-    winner = max(stacks[-1].itervalues(), key=lambda h: h.logprob)
-    def extract_english_recursive(h):
-        return '' if h.predecessor is None else '%s%s ' % (extract_english_recursive(h.predecessor), h.phrase.english)
-    print extract_english_recursive(winner)
+	# find best translation by looking at the best scoring hypothesis
+	# on the last stack
+	#print stacks[-2]
+	#print stacks[-1]
+	#print f, len(f)
+		
+	def extract_english_recursive(h):
+		#print h
+		#print h.hyprange, h.transranges
+		return '' if h.predecessor is None else '%s%s ' % (extract_english_recursive(h.predecessor), h.phrase.english)
 
-    if opts.verbose:
-        def extract_tm_logprob(h):
-            return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(h.predecessor)
-        tm_logprob = extract_tm_logprob(winner)
-        sys.stderr.write('LM = %f, TM = %f, Total = %f\n' % 
-            (winner.logprob - tm_logprob, tm_logprob, winner.logprob))
+	#print f
+	#for i in range(len(stacks)-1, 0, -1):
+	#	if len(stacks[i]) != 0:
+	#		winner = max(stacks[i].itervalues(), key=lambda h: h.logprob)
+	#		break
+	"""for snum in range(len(stacks)-1, 0, -1):
+		if len(stacks[snum]) != 0:
+			break
+	translen = snum -1
+	# Don't do anything if the last stack is filled
+	for stack in stacks[snum:-1]:
+		print "Doing last phase for", f, "snum=", snum
+		translen += 1
+		for h in heapq.nlargest(opts.s, stacks[snum].itervalues(), key=lambda h: h.logprob+h.fcost): # prune
+			ranges = []
+			end = 0
+			for tr in h.transranges + [(len(f), len(f))]:
+				for i in range(end, tr[0]):
+					if i > h.hyprange[1] + opts.r:
+						break
+					for j in range(i+1, tr[0]+1):
+						if j < h.hyprange[0] - opts.r:
+							break
+						ranges.append((i, j))
+				end = tr[1]
+			for i, j in ranges:
+				if f[i:j] in tm:
+					phrases = tm[f[i:j]]
+				else:
+					phrases = [untranslated(" ".join(f[i:j]), -10000.00)]
+					#phrases = tuple([untranslated(x, -100.0) for x in f[i:j]])
+				for phrase in phrases:
+					logprob = h.logprob + phrase.logprob
+					lm_state = h.lm_state
+					for word in phrase.english.split():
+						(lm_state, word_logprob) = lm.score(lm_state, word)
+						logprob += word_logprob
+					logprob += lm.end(lm_state) if j == len(f) else 0.0
+				 	fc = get_future_costs((i, j), ranges, future_scores)
+					#logprob += fc
+					new_transranges = add_transrange(h.transranges, (i, j))
+					new_hypothesis = hypothesis(logprob, lm_state, (i, j), new_transranges, h, phrase, fc)
+					new_translen = translen + j-i
+					#print "ntl", new_translen, "tl", translen, "i", i, "j", j
+					if lm_state not in stacks[new_translen] or stacks[new_translen][lm_state].logprob < logprob: # second case is recombination
+						stacks[new_translen][lm_state] = new_hypothesis"""
+		
+	"""if len(stacks[-1]) == 0:
+		#print "NO TRANSLATION!"
+		print " ".join(f)
+		continue"""
+	"""for tl, stack in enumerate(stacks):
+		print tl, "size", len(stack)
+		for lm_state in stack:
+			hr = stack[lm_state].hyprange
+			print "Info:", f[hr[0]:hr[1]], tl, lm_state, stack[lm_state].phrase, stack[lm_state].logprob, hr, stack[lm_state].transranges, stack[lm_state].fcost
+			print "Pred phrase:", stack[lm_state].predecessor.phrase if stack[lm_state].predecessor is not None else None
+			print "English:", extract_english_recursive(stack[lm_state])
+			print"""
+	if len(stacks[-1]) == 0:
+		print monotone_decode(f, opts.s, tm, lm)
+	else:
+		winner = max(stacks[-1].itervalues(), key=lambda h: h.logprob)
+		print extract_english_recursive(winner)
+
+	if opts.verbose:
+		def extract_tm_logprob(h):
+			return 0.0 if h.predecessor is None else h.phrase.logprob + extract_tm_logprob(h.predecessor)
+		tm_logprob = extract_tm_logprob(winner)
+		sys.stderr.write('LM = %f, TM = %f, Total = %f\n' % 
+			(winner.logprob - tm_logprob, tm_logprob, winner.logprob))

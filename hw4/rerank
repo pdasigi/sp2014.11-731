@@ -1,31 +1,103 @@
 #!/usr/bin/env python
 import optparse
 import sys
+import random
+import bleu
+from lr import LogisticRegression as lreg
 
 optparser = optparse.OptionParser()
+optparser.add_option("-d", "--dev", dest="dev", default="data/dev.100best", help="100-best dev translation lists")
+optparser.add_option("-r", "--ref", dest="ref", default="data/dev.ref", help="dev reference")
 optparser.add_option("-k", "--kbest-list", dest="input", default="data/test.100best", help="100-best translation lists")
-optparser.add_option("-l", "--lm", dest="lm", default=-1.0, type="float", help="Language model weight")
-optparser.add_option("-t", "--tm1", dest="tm1", default=-0.5, type="float", help="Translation model p(e|f) weight")
-optparser.add_option("-s", "--tm2", dest="tm2", default=-0.5, type="float", help="Lexical translation model p_lex(f|e) weight")
+#optparser.add_option("-l", "--lm", dest="lm", default=-1.0, type="float", help="Language model weight")
+#optparser.add_option("-t", "--tm1", dest="tm1", default=-0.5, type="float", help="Translation model p(e|f) weight")
+#optparser.add_option("-s", "--tm2", dest="tm2", default=-0.5, type="float", help="Lexical translation model p_lex(f|e) weight")
+optparser.add_option("-z", "--sample", dest="sample", default=50, type="int", help="Sample size")
+optparser.add_option("-m", "--meteorfile", dest="mfile", default='', help="Location of meteor file, if not given, BLEU will be used")
 (opts, _) = optparser.parse_args()
-weights = {'p(e)'       : float(opts.lm) ,
-           'p(e|f)'     : float(opts.tm1),
-           'p_lex(f|e)' : float(opts.tm2)}
+
+all_ref = [line.strip() for line in open(opts.ref)]
+all_dev = [pair.split(' ||| ') for pair in open(opts.dev)]
+scores = []
+if opts.mfile == '':
+	print >>sys.stderr, "Using dev BLEU scores"
+	usebleu = True
+	import bleu
+	for snum, ref in enumerate(all_ref):
+		hyps = all_dev[snum*100:snum*100 + 100]
+		for hyp in hyps:
+			scores.append(bleu.bleu([x for x in bleu.bleu_stats(hyp, ref)]))
+else:
+	print >>sys.stderr, "Using dev METEOR scores"
+	for line in open(opts.mfile):
+		if "Segment " in line:
+			parts = line.strip().split("\t")
+			scores.append(float(parts[1])) 
+print >>sys.stderr, "Sampling %d pairs for training from eash hypotheses set"%opts.sample
+
+def count_foreign_words(s):
+	fc = 0
+	for w in s:
+		try:
+			w.encode('ascii')
+		except:
+			fc += 1
+	return fc
+
+def get_diff_feats(hyp1, hyp2):
+	_, h1, feat1 = hyp1
+	_, h2, feat2 = hyp2
+	diff_feats = {}
+	for f1, f2 in zip(feat1.split(' '), feat2.split(' ')):
+		k1, v1 = f1.split('=')
+		k2, v2 = f2.split('=')
+		diff_feats[k1] = float(v1) - float(v2)
+	# Additional features
+	diff_feats["num_word_diff"] = len(h1.split()) - len(h2.split())
+	diff_feats["num_foreign_words"] = count_foreign_words(h1) - count_foreign_words(h2)
+	return h1, h2, diff_feats
+
+train_data = []
+for snum, ref in enumerate(all_ref):
+	hyps_with_scores = zip(all_dev, scores)[snum *100:snum * 100 + 100]
+	samples = []
+	for _ in range(opts.sample):
+		samples.append(tuple(random.sample(hyps_with_scores, 2)))
+	for (hyp1, hyp1score), (hyp2, hyp2score) in samples:
+		h1, h2, diff_feats = get_diff_feats(hyp1, hyp2)
+		train_data.append([int(hyp1score > hyp2score), diff_feats])
+			
+
+classifier = lreg()
+classifier.train(train_data, 10)	
+
+#weights = {'p(e)': float(opts.lm),
+#	   'p(e|f)' : float(opts.tm1),
+#	   'p_lex(f|e)': float(opts.tm2)}
 
 all_hyps = [pair.split(' ||| ') for pair in open(opts.input)]
 num_sents = len(all_hyps) / 100
 for s in xrange(0, num_sents):
-  hyps_for_one_sent = all_hyps[s * 100:s * 100 + 100]
-  (best_score, best) = (-1e300, '')
-  for (num, hyp, feats) in hyps_for_one_sent:
-    score = 0.0
-    for feat in feats.split(' '):
-      (k, v) = feat.split('=')
-      score += weights[k] * float(v)
-    if score > best_score:
-      (best_score, best) = (score, hyp)
-  try: 
-    sys.stdout.write("%s\n" % best)
-  except (Exception):
-    sys.exit(1)
+	hyps = all_hyps[s * 100:s * 100 + 100]
+	#(best_score, best) = (-1e300, '')
+	#for (num, hyp, feats) in hyps_for_one_sent:
+	#	score = 0.0
+	#	for feat in feats.split(' '):
+	#		(k, v) = feat.split('=')
+	#		score += weights[k] * float(v)
+	#	if score > best_score:
+	#		(best_score, best) = (score, hyp)
+	best_hyp = hyps[0]
+	best = best_hyp[1]
+	for hyp in hyps[1:]:
+		h1, h2, diff_feats = get_diff_feats(hyp, best_hyp)
+		decision = classifier.classify(diff_feats)
+		if decision == 1:
+			best = h1
+			best_hyp = hyp
+			
+	try: 
+		sys.stdout.write("%s\n" % best)
+	except (Exception):
+		sys.exit(1)
 

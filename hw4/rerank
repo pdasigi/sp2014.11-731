@@ -9,9 +9,6 @@ optparser = optparse.OptionParser()
 optparser.add_option("-d", "--dev", dest="dev", default="data/dev.100best", help="100-best dev translation lists")
 optparser.add_option("-r", "--ref", dest="ref", default="data/dev.ref", help="dev reference")
 optparser.add_option("-k", "--kbest-list", dest="input", default="data/test.100best", help="100-best translation lists")
-#optparser.add_option("-l", "--lm", dest="lm", default=-1.0, type="float", help="Language model weight")
-#optparser.add_option("-t", "--tm1", dest="tm1", default=-0.5, type="float", help="Translation model p(e|f) weight")
-#optparser.add_option("-s", "--tm2", dest="tm2", default=-0.5, type="float", help="Lexical translation model p_lex(f|e) weight")
 optparser.add_option("-z", "--sample", dest="sample", default=50, type="int", help="Sample size")
 optparser.add_option("-m", "--meteorfile", dest="mfile", default='', help="Location of meteor file, if not given, BLEU will be used")
 (opts, _) = optparser.parse_args()
@@ -21,7 +18,6 @@ all_dev = [pair.split(' ||| ') for pair in open(opts.dev)]
 scores = []
 if opts.mfile == '':
 	print >>sys.stderr, "Using dev BLEU scores"
-	usebleu = True
 	import bleu
 	for snum, ref in enumerate(all_ref):
 		hyps = all_dev[snum*100:snum*100 + 100]
@@ -37,7 +33,7 @@ print >>sys.stderr, "Sampling %d pairs for training from eash hypotheses set"%op
 
 def count_foreign_words(s):
 	fc = 0
-	for w in s:
+	for w in s.split():
 		try:
 			w.encode('ascii')
 		except:

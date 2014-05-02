@@ -1,5 +1,5 @@
 
-import math, sys
+import math, sys, random
 
 class LogisticRegression:
     def __init__(self):
@@ -17,13 +17,18 @@ class LogisticRegression:
                     update = (label - predicted) * v
                     updates.append(update)
                     self.weight[f] = self.weight[f] + self.rate * update
-            print >>sys.stderr, 'iteration', i, 'done', 'average update', sum(updates)/len(updates)
+            print >>sys.stderr, 'iteration', i, 'done', 'new weights', self.weight
         return
     def classify(self, feature):
         logit = 0
         for f,v in feature.iteritems():
             coef = 0
-            if f in self.weight:
-                coef = self.weight[f]
+            if f not in self.weight:
+                self.weight[f] = random.random()
+            coef = self.weight[f]
             logit += coef * v
-        return 1.0 / (1.0 + math.exp(-logit))
+        try:
+            return 1.0 / (1.0 + math.exp(-logit))
+        except:
+            print >>sys.stderr, "Incompatible logit", logit
+            return 1

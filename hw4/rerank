@@ -111,7 +111,7 @@ for snum, (src, ref) in enumerate(zip(all_src, all_ref)):
 
 #classifier = lreg()
 #classifier.train(train_data, 10)	
-classifier = svm.SVC()
+classifier = svm.LinearSVC()
 featnames = train_data[0][1].keys()
 X = []
 y = []

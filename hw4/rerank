@@ -3,9 +3,9 @@ import optparse
 import sys
 import random
 import bleu
-from lr import LogisticRegression as lreg
+#from lr import LogisticRegression as lreg
 import pickle, codecs
-#from sklearn import svm
+from sklearn import svm
 
 optparser = optparse.OptionParser()
 optparser.add_option("-d", "--dev", dest="dev", default="data/dev.100best", help="100-best dev translation lists")
@@ -109,19 +109,19 @@ for snum, (src, ref) in enumerate(zip(all_src, all_ref)):
 		train_data.append([int(hyp1score > hyp2score), diff_feats])
 			
 
-classifier = lreg()
-classifier.train(train_data, 10)	
-#classifier = svm.SVC()
-#featnames = train_data[0][1].keys()
-#X = []
-#y = []
-#for datum in train_data:
-#	y.append(datum[0])
-#	x = []
-#	for fn in featnames:
-#		x.append(datum[1][fn])
-#	X.append(x)
-#classifier.fit(X, y)
+#classifier = lreg()
+#classifier.train(train_data, 10)	
+classifier = svm.SVC()
+featnames = train_data[0][1].keys()
+X = []
+y = []
+for datum in train_data:
+	y.append(datum[0])
+	x = []
+	for fn in featnames:
+		x.append(datum[1][fn])
+	X.append(x)
+classifier.fit(X, y)
 
 #weights = {'p(e)': float(opts.lm),
 #	   'p(e|f)' : float(opts.tm1),
@@ -145,11 +145,11 @@ for s in xrange(0, num_sents):
 	best = best_hyp[1]
 	for hyp in hyps[1:]:
 		h1, h2, diff_feats = get_diff_feats(src, hyp, best_hyp)
-		decision = classifier.classify(diff_feats)
-		#x = []
-		#for fn in featnames:
-		#	x.append(diff_feats[fn])
-		#decision = classifier.predict(x)
+		#decision = classifier.classify(diff_feats)
+		x = []
+		for fn in featnames:
+			x.append(diff_feats[fn])
+		decision = classifier.predict(x)
 		if decision == 1:
 			best = h1
 			best_hyp = hyp
